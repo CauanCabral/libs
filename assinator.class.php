@@ -38,8 +38,9 @@ class Assinator
 	protected $it = null;
 
 	protected $defaultSignaturePatterns = array(
-		'begin' => '/(<\?php)(\s|\r|t)*(\/\*\*)?/',
-		'end' => '/\*\//'
+		'begin' => '((<\?php)(\s|\r|t)*(\/\*\*)?)',
+		'body' => '(\s|.)*',
+		'end' => '(\*\/)'
 	);
 
 	/**
@@ -72,7 +73,7 @@ class Assinator
 		{
 			if(is_file($this->target))
 			{
-				$this->fileContent = file_get_content($this->target);
+				$this->fileContent = file_get_contents($this->target);
 				return $this->applySignature(new SplFileObject($this->target, "w"));
 			}
 
@@ -82,8 +83,8 @@ class Assinator
 			{
 				if( $this->validExtension( $filename ) && $cur->isFile() )
 				{
-					$this->fileContent = file_get_contents($this->target);
-					if(!$this->applySignature($cur))
+					$this->fileContent = file_get_contents($filename);
+					if(!$this->applySignature(new SplFileObject($cur, "w")))
 					{
 						trigger_error("Não foi possível aplicar a assinatura no arquivo {$filename}", E_USER_NOTICE);
 					}
@@ -118,97 +119,46 @@ class Assinator
 
 	protected function applySignature($file)
 	{
-		// reset cursor
-		$file->rewind();
+		if($this->mode == 'replace' && $this->__replaceSignature($file) == FALSE)
+			return FALSE;
+		else if($this->mode == 'append' && $this->__appendSignature($file) == FALSE)
+			return FALSE;
 
-		$positions = $this->__identifyOldSignature($file);
-
-		if($this->mode == 'replace')
-			return $this->__replaceSignature($file, $positions['init'], $positions['end']);
-		else if($this->mode == 'append')
-			return $this->__appendSignature($file, $positions['end']);
+		return is_numeric($file->fwrite($this->fileContent));
 	}
 
-	private function __identifyOldSignature($file)
+	private function __replaceSignature($file)
 	{
-		$positions = array('init' => 0, 'end' => 0);
+		$pattern = '/^' . $this->defaultSignaturePatterns['begin'] . $this->defaultSignaturePatterns['body'] . $this->defaultSignaturePatterns['end'] . '/';
+		$changed = preg_replace($pattern, $this->newSignature, $this->fileContent);
 
-		$begin = FALSE;
-		$end = FALSE;
-		
-		if($file->eof())
-			return $positions;
-		
-		while(!$file->eof() && !$end)
+		if($changed == null || $changed == $this->fileContent)
 		{
-			$current = $file->fgets();
-
-			if(!$begin)
-			{
-				if(preg_match($this->defaultSignaturePatterns['begin'], $current) == 1)
-				{
-					$begin = TRUE;
-					$positions['init'] = $file->key();
-				}
-			}
-			
-			if(preg_match($this->defaultSignaturePatterns['end'], $current) == 1)
-			{
-				$end = TRUE;
-				$positions['end'] = $file->key();
-			}
+			$changed = preg_replace('/^' . $this->defaultSignaturePatterns['begin'] . '/', $this->newSignature, $this->fileContent);
 		}
 
-		return $positions;
+		$this->fileContent = $changed;
+
+		return is_string($changed);
 	}
 
-	private function __replaceSignature($file, $initPos, $endPos)
+	private function __appendSignature($file)
 	{
-		echo "Vou apagar o que está entre {$initPos} e {$endPos}\n";
+		$pattern = '/^(' . $this->defaultSignaturePatterns['begin'] . $this->defaultSignaturePatterns['body'] . $this->defaultSignaturePatterns['end'] . ')/';
 
-		// first, remove old signature
-		$file->seek($initPos);
-		while(!$file->eof() && $file->key() <= $endPos)
+		$changed = preg_replace($pattern, '$1' . $this->newSignature, $this->fileContent);
+
+		if($changed == null || $changed == $this->fileContent)
 		{
-			echo "Apagando a linha {$file->key()} que tinha o valor {$file->current()}\n";
-			$file->fwrite("");
-			$file->fflush();
-			$file->next();
+			$changed = preg_replace('/^' . $this->defaultSignaturePatterns['begin'] . '/', '$1' . $this->newSignature, $this->fileContent);
 		}
-		
-		$file->rewind();
 
-		echo file_get_contents("outro.php");
-		
-		return $this->__appendSignature($file, $initPos);
-	}
+		$this->fileContent = $changed;
 
-	private function __appendSignature($file, $initPos)
-	{
-		$this->__allocFileSpace($file, $initPos);
-		
-		$file->seek($initPos);
-		echo "A linha {$initPos} contém {$file->current()}\n";
-
-		//$out = $file->fwrite($this->newSignature);
-
-		return is_numeric($out = 0);
-	}
-
-	private function __allocFileSpace($file, $initPos)
-	{
-		$file->seek($initPos);
-		
-		for($neededSpace = mb_strlen($this->newSignature, '8bit'); !$file->eof() && $neededSpace < 0; --$neededSpace)
-		{
-			$file->fwrite(" ");
-		}
-		echo "Agora eu estou em {$file->ftell()}\n";
-
-		$file->rewind();
+		return is_string($changed);
 	}
 }
 
-$a = new Assinator('outro.php', 'teste.txt');
+$a = new Assinator('./teste/', 'teste.txt');
 $a->run();
 ?>
