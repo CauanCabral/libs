@@ -26,6 +26,11 @@ class Assinator
 	protected $target = null;
 
 	/**
+	 *
+	 */
+	protected $fileContent = null;
+
+	/**
 	 * Itarator for specified target
 	 *
 	 * @var it
@@ -67,7 +72,8 @@ class Assinator
 		{
 			if(is_file($this->target))
 			{
-				return $this->applySignature(new SplFileObject($this->target, "r+"));
+				$this->fileContent = file_get_content($this->target);
+				return $this->applySignature(new SplFileObject($this->target, "w"));
 			}
 
 			$this->it = new RecursiveDirectoryIterator( $this->target );
@@ -76,6 +82,7 @@ class Assinator
 			{
 				if( $this->validExtension( $filename ) && $cur->isFile() )
 				{
+					$this->fileContent = file_get_contents($this->target);
 					if(!$this->applySignature($cur))
 					{
 						trigger_error("Não foi possível aplicar a assinatura no arquivo {$filename}", E_USER_NOTICE);
@@ -157,33 +164,48 @@ class Assinator
 
 	private function __replaceSignature($file, $initPos, $endPos)
 	{
+		echo "Vou apagar o que está entre {$initPos} e {$endPos}\n";
+
 		// first, remove old signature
 		$file->seek($initPos);
-
 		while(!$file->eof() && $file->key() <= $endPos)
 		{
-			//echo "Apagando a linha {$file->key()} que tinha o valor {$file->current()}\n";
+			echo "Apagando a linha {$file->key()} que tinha o valor {$file->current()}\n";
 			$file->fwrite("");
+			$file->fflush();
 			$file->next();
 		}
+		
+		$file->rewind();
 
-		$file->fflush();
-
+		echo file_get_contents("outro.php");
+		
 		return $this->__appendSignature($file, $initPos);
 	}
 
 	private function __appendSignature($file, $initPos)
 	{
+		$this->__allocFileSpace($file, $initPos);
+		
 		$file->seek($initPos);
-		//echo "A linha {$initPos} contém {$file->current()}\n";
+		echo "A linha {$initPos} contém {$file->current()}\n";
 
-		$out = $file->fwrite($this->newSignature);
+		//$out = $file->fwrite($this->newSignature);
 
-		$out += $file->fwrite("\n");
+		return is_numeric($out = 0);
+	}
 
-		$file->fflush();
+	private function __allocFileSpace($file, $initPos)
+	{
+		$file->seek($initPos);
+		
+		for($neededSpace = mb_strlen($this->newSignature, '8bit'); !$file->eof() && $neededSpace < 0; --$neededSpace)
+		{
+			$file->fwrite(" ");
+		}
+		echo "Agora eu estou em {$file->ftell()}\n";
 
-		return is_numeric($out);
+		$file->rewind();
 	}
 }
 
